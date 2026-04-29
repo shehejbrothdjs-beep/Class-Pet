@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "Represents a student and their virtual pet.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Student unique ID" },
+        "name": { "type": "string", "description": "Student real name" },
+        "nickname": { "type": "string", "description": "Pet nickname" },
+        "eggColor": { "type": "string", "description": "Color of the initial egg/slime (e.g., 'red', 'blue')" },
+        "exp": { "type": "number", "description": "Current experience points" },
+        "level": { "type": "number", "description": "Current pet level" },
+        "effects": { "type": "array", "description": "List of unlocked visual effects", "items": { "type": "string" } },
+        "lastInteractionTime": { "type": "number", "description": "Timestamp of the last interaction to calculate mood" },
+        "createdAt": { "type": "number", "description": "Creation timestamp" }
+      },
+      "required": ["id", "name", "exp", "level", "eggColor", "effects", "lastInteractionTime", "createdAt"]
+    },
+    "BehaviorLog": {
+      "title": "BehaviorLog",
+      "description": "A record of an action that resulted in points gained or lost.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string", "description": "ID of the student" },
+        "actionName": { "type": "string", "description": "Name of the behavior (e.g., 'Cleaned board')" },
+        "points": { "type": "number", "description": "Points value (+ or -)" },
+        "timestamp": { "type": "number", "description": "When the action occurred" },
+        "teacherId": { "type": "string", "description": "UID of the teacher who recorded it" }
+      },
+      "required": ["id", "studentId", "actionName", "points", "timestamp", "teacherId"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global settings like behavior rules",
+      "type": "object",
+      "properties": {
+        "rules": { "type": "array", "items": { "type": "object" }, "description": "List of behavior rules (+/- points)" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["rules", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Collection of all students in the class"
+    },
+    "/behaviorLogs/{logId}": {
+      "schema": { "$ref": "#/entities/BehaviorLog" },
+      "description": "Log of all point-changing behaviors"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/Settings" },
+      "description": "Global platform configurations (e.g., global document)"
+    }
+  }
+}

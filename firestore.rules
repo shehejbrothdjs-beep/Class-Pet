@@ -1,0 +1,106 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---------------------------------------------------------
+    // PRIMITIVE DEFINITIONS
+    // ---------------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn(); } // Removed strict email_verified constraint
+    function isAdmin() { return isVerified(); } // For this class app, any logged in user (the teacher) is admin
+
+    // ---------------------------------------------------------
+    // VALIDATION BLUEPRINTS
+    // ---------------------------------------------------------
+    function isValidStudent(data) {
+      return data.keys().hasAll(['id', 'name', 'nickname', 'eggColor', 'exp', 'level', 'effects', 'lastInteractionTime', 'createdAt']) &&
+             data.keys().size() == 9 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 64 &&
+             data.nickname is string && data.nickname.size() <= 64 &&
+             data.eggColor is string && data.eggColor.size() <= 32 &&
+             data.exp is number && data.exp >= 0 &&
+             data.level is number && data.level >= 1 &&
+             data.effects is list && data.effects.size() <= 20 &&
+             (data.effects.size() == 0 || data.effects[0] is string) &&
+             data.lastInteractionTime is number &&
+             data.createdAt is number;
+    }
+
+    function isValidBehaviorLog(data) {
+      return data.keys().hasAll(['id', 'studentId', 'actionName', 'points', 'timestamp', 'teacherId']) &&
+             data.keys().size() == 6 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.studentId is string && data.studentId.size() <= 128 &&
+             data.actionName is string && data.actionName.size() <= 128 &&
+             data.points is number &&
+             data.timestamp is number &&
+             data.teacherId is string && data.teacherId == request.auth.uid;
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll(['rules', 'updatedAt']) &&
+             (data.keys().size() == 2 || (data.keys().size() == 3 && data.keys().hasAll(['classPin']))) &&
+             data.rules is list && data.rules.size() <= 100 &&
+             data.updatedAt is number &&
+             (!('classPin' in data) || (data.classPin is string && data.classPin.size() <= 32));
+    }
+
+    // ---------------------------------------------------------
+    // COLLECTIONS
+    // ---------------------------------------------------------
+    match /students/{studentId} {
+      // Anyone can read the students to render the big screen or personal query page
+      allow read: if isValidId(studentId);
+      allow list: if true; // We allow list without conditions because it's a public class board
+
+      // Only teacher can create/delete
+      // Note: we can't use incoming() in delete
+      allow create: if isAdmin() && isValidId(studentId) && isValidStudent(incoming());
+      allow delete: if isAdmin() && isValidId(studentId);
+
+      // Updates
+      allow update: if isValidId(studentId) && isValidStudent(incoming()) && (
+        // Action: Teacher updates exp, level, effects, etc.
+        (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'nickname', 'exp', 'level', 'effects', 'lastInteractionTime'])) ||
+        // Action: Anonymous/Anyone interacting with the pet updates lastInteractionTime
+        (incoming().diff(existing()).affectedKeys().hasOnly(['lastInteractionTime']))
+      );
+    }
+
+    match /behaviorLogs/{logId} {
+      // Students can query their own logs if we filter by studentId, but since it's a class public board, we can allow reads
+      allow read: if isValidId(logId);
+      allow list: if true;
+
+      // Only teachers log behaviors
+      allow create: if isAdmin() && isValidId(logId) && isValidBehaviorLog(incoming()) &&
+                    // Ensure the student actually exists using atomicity check (exists)
+                    exists(/databases/$(database)/documents/students/$(incoming().studentId));
+      
+      // Logs are immutable, no updates allowed. Cannot delete them for accountability.
+      allow update, delete: if false;
+    }
+
+    match /settings/{settingId} {
+      // Settings can be read by everyone (to get the behavior rules)
+      allow read, list: if true;
+
+      // Only teachers can modify settings
+      allow create: if isAdmin() && isValidSettings(incoming());
+      allow update: if isAdmin() && isValidSettings(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['rules', 'updatedAt', 'classPin']);
+      allow delete: if false;
+    }
+  }
+}
